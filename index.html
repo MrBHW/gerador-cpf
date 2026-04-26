@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gerador de CPFs Fictícios</title>
+
+  <!--
+    BIBLIOTECA XLSX
+    Usamos a biblioteca SheetJS (xlsx) para criar arquivos Excel (.xlsx) direto no navegador.
+    Ela é carregada via CDN — não precisa instalar nada.
+    Documentação: https://sheetjs.com/
+  -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+  <style>
+    /* ─── RESET E BASE ─────────────────────────────────────────────────── */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    /*
+      Importamos a fonte "DM Mono" do Google Fonts.
+      É uma fonte monoespaçada — ótima para exibir números como CPF.
+    */
+    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Sora:wght@300;400;600&display=swap');
+
+    :root {
+      --bg:        #0f1117;       /* fundo escuro principal */
+      --surface:   #1a1d27;       /* cartões e painéis */
+      --border:    #2a2d3a;       /* bordas sutis */
+      --accent:    #4ade80;       /* verde — cor de destaque */
+      --accent-dim:#1a3a26;       /* verde escuro para backgrounds */
+      --text:      #e8eaf0;       /* texto principal */
+      --muted:     #6b7280;       /* texto secundário / placeholders */
+      --danger:    #f87171;       /* vermelho para erros */
+      --font-ui:   'Sora', sans-serif;
+      --font-mono: 'DM Mono', monospace;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-ui);
+      font-size: 15px;
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 48px 16px 80px;
+    }
+
+    /* ─── LAYOUT CENTRAL ───────────────────────────────────────────────── */
+    .container {
+      width: 100%;
+      max-width: 560px;
+    }
+
+    /* ─── CABEÇALHO ────────────────────────────────────────────────────── */
+    header {
+      margin-bottom: 40px;
+    }
+
+    header .badge {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      background: var(--accent-dim);
+      padding: 4px 10px;
+      border-radius: 4px;
+      margin-bottom: 16px;
+    }
+
+    header h1 {
+      font-size: 28px;
+      font-weight: 600;
+      line-height: 1.2;
+      margin-bottom: 10px;
+    }
+
+    header p {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    /* ─── CARTÃO (painel branco) ───────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px;
+      margin-bottom: 16px;
+    }
+
+    /* ─── CONTROLES (input + botões) ───────────────────────────────────── */
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    label {
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 400;
+    }
+
+    /*
+      Input numérico — note que usamos appearance: none para remover
+      as setas padrão do browser e ter controle total sobre o estilo.
+    */
+    input[type="number"] {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 22px;
+      font-weight: 500;
+      padding: 14px 16px;
+      width: 100%;
+      outline: none;
+      transition: border-color 0.2s;
+      -moz-appearance: textfield;        /* Firefox: remove setas */
+      appearance: textfield;
+    }
+
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button {
+      -webkit-appearance: none;          /* Chrome/Safari: remove setas */
+    }
+
+    input[type="number"]:focus {
+      border-color: var(--accent);
+    }
+
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    /* ─── BOTÕES ────────────────────────────────────────────────────────── */
+    .btn-group {
+      display: flex;
+      gap: 10px;
+    }
+
+    button {
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-family: var(--font-ui);
+      font-size: 14px;
+      font-weight: 600;
+      padding: 13px 20px;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+
+    button:active {
+      transform: scale(0.97);
+    }
+
+    /*
+      Botão primário: verde com texto escuro.
+      flex: 1 faz ele ocupar todo o espaço disponível.
+    */
+    .btn-primary {
+      background: var(--accent);
+      color: #0a1a0f;
+      flex: 1;
+    }
+
+    .btn-primary:hover { opacity: 0.88; }
+
+    /* Botão secundário: só borda, sem fundo preenchido. */
+    .btn-secondary {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    .btn-secondary:hover { background: var(--border); }
+
+    /* Estado desabilitado — quando ainda não há CPFs gerados. */
+    button:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    /* ─── MENSAGEM DE ERRO ─────────────────────────────────────────────── */
+    .error {
+      font-size: 13px;
+      color: var(--danger);
+      display: none;           /* oculto por padrão, JS mostra quando necessário */
+      margin-top: 4px;
+    }
+
+    /* ─── PAINEL DE ESTATÍSTICAS ───────────────────────────────────────── */
+    .stats {
+      display: none;           /* oculto até gerar os CPFs */
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .stats.visible { display: grid; }
+
+    .stat {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      text-align: center;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 6px;
+    }
+
+    .stat-value {
+      font-family: var(--font-mono);
+      font-size: 20px;
+      font-weight: 500;
+      color: var(--accent);
+    }
+
+    /* ─── PRÉVIA DOS CPFs ──────────────────────────────────────────────── */
+    .preview {
+      display: none;           /* oculto até gerar */
+    }
+
+    .preview.visible { display: block; }
+
+    .preview-header {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    /*
+      Lista de CPFs — fundo escuro, fonte monoespaçada.
+      overflow-y: auto com max-height cria scroll interno quando há muitos itens.
+    */
+    .preview-list {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      max-height: 220px;
+      overflow-y: auto;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 2;
+      color: var(--text);
+    }
+
+    /* Scrollbar customizada — só funciona em Chrome/Edge/Safari. */
+    .preview-list::-webkit-scrollbar        { width: 4px; }
+    .preview-list::-webkit-scrollbar-track  { background: transparent; }
+    .preview-list::-webkit-scrollbar-thumb  { background: var(--border); border-radius: 4px; }
+
+    .preview-more {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 8px;
+      text-align: right;
+    }
+
+    /* ─── RODAPÉ ────────────────────────────────────────────────────────── */
+    footer {
+      margin-top: 32px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.7;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+
+    <!-- CABEÇALHO -->
+    <header>
+      <span class="badge">Propriedade da equipe de Treinamento Gestão de Rede Nacional</span>
+      <h1>Gerador de<br>CPFs</h1>
+      <p>
+        CPFs matematicamente válidos (dígitos verificadores corretos),
+        sem pontuação, prontos para uso em testes de sistemas.
+      </p>
+    </header>
+
+    <!-- ESTATÍSTICAS (aparecem após gerar) -->
+    <div class="stats" id="stats">
+      <div class="stat">
+        <div class="stat-label">Gerados</div>
+        <div class="stat-value" id="statQtd">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Dígitos</div>
+        <div class="stat-value">11</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Formato</div>
+        <div class="stat-value">Texto</div>
+      </div>
+    </div>
+
+    <!-- CARTÃO PRINCIPAL -->
+    <div class="card">
+      <div class="controls">
+
+        <!-- CAMPO DE QUANTIDADE -->
+        <div class="field">
+          <label for="qtd">Quantos CPFs deseja gerar?</label>
+          <input
+            type="number"
+            id="qtd"
+            min="1"
+            max="10000"
+            value="10"
+            placeholder="Ex: 500"
+          />
+          <span class="hint">Mínimo: 1 &nbsp;·&nbsp; Máximo: 10.000</span>
+          <span class="error" id="erro">Insira um valor entre 1 e 10.000.</span>
+        </div>
+
+        <!-- BOTÕES -->
+        <div class="btn-group">
+          <button class="btn-primary" onclick="gerar()">
+            Gerar CPFs
+          </button>
+          <button class="btn-secondary" id="btnBaixar" onclick="baixarExcel()" disabled>
+            Baixar .xlsx
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- PRÉVIA DOS CPFs GERADOS -->
+    <div class="preview" id="preview">
+      <div class="card">
+        <p class="preview-header">Prévia dos CPFs gerados</p>
+        <div class="preview-list" id="lista"></div>
+        <p class="preview-more" id="mais"></p>
+      </div>
+    </div>
+
+    <!-- RODAPÉ INFORMATIVO -->
+    <footer>
+      Os CPFs gerados são <strong>fictícios</strong> e destinados
+      exclusivamente a testes e desenvolvimento.<br>
+      O uso de CPFs de terceiros sem consentimento é ilegal.
+    </footer>
+
+  </div>
+
+  <!--
+    Carregamos nosso script APÓS o HTML.
+    Isso garante que todos os elementos da página já existem
+    quando o JS tentar manipulá-los.
+  -->
+  <script src="gerador.js"></script>
+
+</body>
+</html>
